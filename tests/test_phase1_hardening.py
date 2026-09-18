@@ -1,8 +1,32 @@
 from concurrent.futures import ThreadPoolExecutor
+import pytest
 
 from fastapi.testclient import TestClient
 
+import app.main as main_module
 from app.main import app
+
+
+
+def _phase3_stub_result(payload):
+    return {
+        "scenario_id": payload.scenario_id,
+        "directive_interpretation": [],
+        "hourly_plan": [],
+        "total_grid_kwh": 0.0,
+        "total_cost_bdt": 0.0,
+        "peak_grid_kwh": 0.0,
+        "plan_summary": "offline regression stub",
+    }
+
+
+@pytest.fixture(autouse=True)
+def _phase3_stub_pipeline(monkeypatch):
+    monkeypatch.setattr(
+        main_module,
+        "run_pipeline",
+        _phase3_stub_result,
+    )
 
 
 def client():
@@ -46,10 +70,20 @@ def assert_invalid_400(response):
 
 
 def assert_phase1_boundary(response):
-    assert response.status_code == 500
+    assert response.status_code == 200
+
     body = response.json()
-    assert body["error"] == "pipeline_not_ready"
-    assert "request_id" in body
+
+    assert set(body) == {
+        "scenario_id",
+        "directive_interpretation",
+        "hourly_plan",
+        "total_grid_kwh",
+        "total_cost_bdt",
+        "peak_grid_kwh",
+        "plan_summary",
+    }
+
     assert "traceback" not in str(body).lower()
 
 

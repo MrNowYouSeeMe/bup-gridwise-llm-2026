@@ -10,6 +10,12 @@ from app.config import APP_NAME, APP_VERSION
 from app.logging_config import configure_logging
 from app.schemas import ScenarioRequest
 from app.validation import semantic_validation_errors
+from app.pipeline import (
+    LLMInterpreterError,
+    OptimizationError,
+    ReplayValidationError,
+    run_pipeline,
+)
 
 configure_logging()
 logger = logging.getLogger("gridwise.api")
@@ -111,42 +117,123 @@ async def health():
 
 
 @app.post("/optimize-energy")
-async def optimize_energy(payload: ScenarioRequest, request: Request):
+async def optimize_energy(
+    payload: ScenarioRequest,
+    request: Request,
+):
     request_id = request_id_of(request)
-    semantic_errors = semantic_validation_errors(payload)
+
+    semantic_errors = semantic_validation_errors(
+        payload
+    )
 
     if semantic_errors:
         logger.warning(
-            "semantic_validation_failed request_id=%s scenario_id=%s errors=%s",
+            "semantic_validation_failed "
+            "request_id=%s scenario_id=%s errors=%s",
             request_id,
             payload.scenario_id,
             semantic_errors,
         )
+
         return JSONResponse(
             status_code=422,
             content={
                 "error": "semantic_validation_error",
-                "message": "The request structure is valid, but one or more values are invalid.",
+                "message": (
+                    "The request structure is valid, "
+                    "but one or more values are invalid."
+                ),
                 "details": semantic_errors,
                 "request_id": request_id,
             },
         )
 
-    payload.hours.sort(key=lambda item: item.hour)
+    payload.hours.sort(
+        key=lambda item: item.hour
+    )
+
     logger.info(
-        "phase1_validation_passed request_id=%s scenario_id=%s notes=%s hours=%s",
+        "pipeline_start request_id=%s "
+        "scenario_id=%s notes=%s",
         request_id,
         payload.scenario_id,
         len(payload.operator_notes),
-        len(payload.hours),
     )
 
-    # Intentional Phase-1 boundary. Phase 2 replaces this.
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "pipeline_not_ready",
-            "message": "Phase 1 validation passed. LLM interpretation is added in Phase 2.",
-            "request_id": request_id,
-        },
+    try:
+        result = run_pipeline(payload)
+
+    except LLMInterpreterError:
+        logger.warning(
+            "llm_interpretation_failed "
+            "request_id=%s scenario_id=%s",
+            request_id,
+            payload.scenario_id,
+        )
+
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "llm_interpretation_error",
+                "message": (
+                    "Operator-note interpretation "
+                    "is temporarily unavailable."
+                ),
+                "request_id": request_id,
+            },
+        )
+
+    except OptimizationError:
+        logger.warning(
+            "optimization_failed "
+            "request_id=%s scenario_id=%s",
+            request_id,
+            payload.scenario_id,
+        )
+
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "optimization_error",
+                "message": (
+                    "No valid schedule could be produced "
+                    "for this scenario."
+                ),
+                "request_id": request_id,
+            },
+        )
+
+    except ReplayValidationError:
+        logger.error(
+            "schedule_replay_failed "
+            "request_id=%s scenario_id=%s",
+            request_id,
+            payload.scenario_id,
+        )
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "schedule_validation_error",
+                "message": (
+                    "The generated schedule failed "
+                    "internal validation."
+                ),
+                "request_id": request_id,
+            },
+        )
+
+    logger.info(
+        "pipeline_complete request_id=%s "
+        "scenario_id=%s total_cost_bdt=%s",
+        request_id,
+        payload.scenario_id,
+        result["total_cost_bdt"],
     )
+
+    return JSONResponse(
+        status_code=200,
+        content=result,
+    )
+
