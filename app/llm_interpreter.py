@@ -18,6 +18,24 @@ from app.directives import (
 logger = logging.getLogger("gridwise.interpreter")
 
 
+# Shared transport only: reuses TCP/TLS connections across requests.
+# It does NOT alter the model, prompt, schema, reasoning effort,
+# repair policy, or deterministic guardrails.
+_GRIDWISE_HTTP_CLIENT = httpx.Client(
+    timeout=httpx.Timeout(
+        connect=4.0,
+        read=15.0,
+        write=5.0,
+        pool=4.0,
+    ),
+    limits=httpx.Limits(
+        max_connections=32,
+        max_keepalive_connections=16,
+        keepalive_expiry=30.0,
+    ),
+)
+
+
 class LLMInterpreterError(RuntimeError):
     pass
 
@@ -394,15 +412,7 @@ def _call_model(
     started = time.perf_counter()
 
     try:
-        with httpx.Client(
-            timeout=httpx.Timeout(
-                connect=4.0,
-                read=15.0,
-                write=5.0,
-                pool=4.0,
-            )
-        ) as client:
-            response = client.post(
+        response = _GRIDWISE_HTTP_CLIENT.post(
                 "https://api.openai.com/v1/responses",
                 headers={
                     "Authorization": f"Bearer {api_key}",

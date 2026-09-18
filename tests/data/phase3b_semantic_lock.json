@@ -1,0 +1,5 @@
+{
+  "system_prompt_sha256": "b9df6dc5c0a22622105994cd800f39a8072de1430ea9922d1cb524349f792998",
+  "model_output_schema_sha256": "0005b1c8bc512709ef34de8323c03b90bf7e48f72c6ccdc56a7df165fdcf4cfc",
+  "note": "Phase 3B transport optimization lock. Any semantic change must intentionally update this file and rerun full live accuracy gates."
+}
