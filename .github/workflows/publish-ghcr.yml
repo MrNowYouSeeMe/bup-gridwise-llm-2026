@@ -1,0 +1,49 @@
+name: Publish GridWise Docker fallback
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish-ghcr.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR with repository GITHUB_TOKEN
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker fallback
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ghcr.io/mrnowyouseeme/bup-gridwise-llm-2026:submission-c1713b7
+            ghcr.io/mrnowyouseeme/bup-gridwise-llm-2026:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/MrNowYouSeeMe/bup-gridwise-llm-2026
+            org.opencontainers.image.revision=c1713b7
+            org.opencontainers.image.title=GridWise LLM 2026
+
+      - name: Print exact fallback reference
+        shell: bash
+        run: |
+          echo "IMAGE=ghcr.io/mrnowyouseeme/bup-gridwise-llm-2026:submission-c1713b7"
+          echo "DIGEST=${{ steps.build.outputs.digest }}"
